@@ -263,9 +263,32 @@ Passing `{"sql": "..."}` is rejected with an explanation, as is any field outsid
 }
 ```
 
-For a hosted deployment set `CRM_TRANSPORT=http` and `CRM_MCP_BEARER_TOKEN`; the server then serves MCP at `POST /mcp` and the event bridge at `POST /crm/ingest`, both behind the bearer token. `CRM_TRANSPORT=both` runs stdio and HTTP together.
+For a hosted deployment set `CRM_TRANSPORT=http` and `CRM_MCP_BEARER_TOKEN`. `CRM_TRANSPORT=both` runs stdio and HTTP together.
 
 Secrets are server-side only — no tool or resource ever returns them.
+
+---
+
+## HTTP surface
+
+| Route | Auth | Purpose |
+| --- | --- | --- |
+| `POST /mcp` | Bearer token | MCP Streamable HTTP transport |
+| `POST /crm/ingest` | Bearer token | Event bridge (alternative to `crm.events_inbox`) |
+| `GET /u/:contactId?t=…` | HMAC in link | Unsubscribe confirmation page |
+| `POST /u/:contactId?t=…` | HMAC in link | Performs the unsubscribe; also serves RFC 8058 one-click |
+| `POST /webhooks/resend` | Svix signature | Delivery, open, click, bounce, complaint |
+| `POST /webhooks/twilio` | Twilio signature | Inbound SMS, including STOP |
+| `GET /health` | none | Liveness |
+
+**The last four are deliberately unauthenticated by bearer token** — an email recipient has no token, and neither Resend nor Twilio can present one. Each is authenticated by its own signature instead: the unsubscribe routes verify the per-contact HMAC embedded in the link, and the webhooks verify the provider's signature (`src/core/webhookAuth.ts`, tested in `tests/webhookAuth.test.ts`). An unverified webhook route would let anyone suppress arbitrary addresses or forge delivery metrics.
+
+Two details worth knowing:
+
+- **`GET /u/:id` never mutates anything.** Mail clients and security scanners prefetch links; an unsubscribe that fires on prefetch opts out people who never clicked. The GET renders a confirm button, the POST does the work.
+- **`CRM_PUBLIC_URL` must match the URL configured in Twilio exactly.** Twilio signs over the full request URL, so a trailing slash or a proxy-rewritten host makes every signature fail.
+
+Emails carry `List-Unsubscribe` and `List-Unsubscribe-Post` headers, which Gmail and Yahoo require of bulk senders and which put a native Unsubscribe button in the client.
 
 ---
 
@@ -279,7 +302,9 @@ See [`.env.example`](.env.example) for the annotated list. The ones that matter 
 | `CRM_DB_POOL_MAX` | `5` | Keep small; you share this instance with the app |
 | `SENDER_PHYSICAL_ADDRESS` | — | **Email sends are blocked without it** (CAN-SPAM) |
 | `UNSUBSCRIBE_BASE_URL` | — | **Email sends are blocked without it** (CAN-SPAM) |
-| `CRM_MCP_BEARER_TOKEN` | — | Required for HTTP. Also the HMAC secret for unsubscribe and approval tokens |
+| `CRM_MCP_BEARER_TOKEN` | — | Required for HTTP. Also the HMAC secret for unsubscribe and approval tokens — **changing it invalidates every unsubscribe link already in the wild** |
+| `CRM_PUBLIC_URL` | — | This server's external URL. Required to verify Twilio signatures |
+| `RESEND_WEBHOOK_SECRET` | — | Without it, message status never advances past `sent` |
 | `BULK_APPROVAL_THRESHOLD` | `200` | Recipients above which a human must approve |
 | `FREQUENCY_CAP` | `2` | Messages per contact per rolling window |
 | `DAILY_SPEND_CEILING_USD` | `50` | Crossing it pauses the campaign |

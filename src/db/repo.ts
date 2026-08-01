@@ -313,6 +313,44 @@ export async function insertMessage(
   return rows[0]!.id;
 }
 
+/** Engagement statuses in the order a message moves through them. */
+const PROGRESSION = ['queued', 'sent', 'delivered', 'opened', 'clicked'] as const;
+export type ProgressionStatus = (typeof PROGRESSION)[number];
+
+/**
+ * Advances a message's status, never rewinds it. Provider webhooks arrive out
+ * of order more often than you would hope -- a late "delivered" must not
+ * overwrite a "clicked" that already landed.
+ */
+export async function advanceMessageStatus(
+  db: Db,
+  providerId: string,
+  status: ProgressionStatus,
+): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `update crm.messages set status = $2
+     where provider_id = $1
+       and array_position($3::text[], status) < array_position($3::text[], $2)`,
+    [providerId, status, [...PROGRESSION]],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Bounces and hard failures overwrite any delivery status short of engagement. */
+export async function markMessageFailed(
+  db: Db,
+  providerId: string,
+  status: 'bounced' | 'failed',
+  error: string,
+): Promise<boolean> {
+  const { rowCount } = await db.query(
+    `update crm.messages set status = $2, error = $3
+     where provider_id = $1 and status in ('queued','sent','delivered')`,
+    [providerId, status, error.slice(0, 500)],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 export async function spentTodayUsd(db: Db): Promise<number> {
   const { rows } = await db.query<{ total: string }>(
     `select coalesce(sum(cost_usd),0) as total from crm.messages where sent_at >= date_trunc('day', now())`,

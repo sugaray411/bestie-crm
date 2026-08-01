@@ -4,6 +4,8 @@ export interface OutboundMessage {
   to: string;
   subject?: string | undefined;
   body: string;
+  /** Per-recipient unsubscribe URL, for List-Unsubscribe headers on email. */
+  unsubscribeUrl?: string | undefined;
 }
 
 export interface SendResult {

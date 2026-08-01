@@ -241,16 +241,17 @@ export async function executeSendPlan(
     }
 
     const address = addressFor(contact, channel)!;
+    const contactUnsubscribeUrl = unsubscribeUrl(
+      ctx.config.guardrails.unsubscribeBaseUrl,
+      contact.id,
+      ctx.config.bearerToken,
+    );
     const prepared = prepareMessage({
       channel,
       subject: input.subject ?? null,
       body: input.body,
       vars: contactVars(contact),
-      unsubscribeUrl: unsubscribeUrl(
-        ctx.config.guardrails.unsubscribeBaseUrl,
-        contact.id,
-        ctx.config.bearerToken,
-      ),
+      unsubscribeUrl: contactUnsubscribeUrl,
       physicalAddress: ctx.config.guardrails.senderPhysicalAddress,
     });
 
@@ -258,6 +259,7 @@ export async function executeSendPlan(
       to: address,
       subject: prepared.subject,
       body: prepared.body,
+      unsubscribeUrl: contactUnsubscribeUrl,
     });
 
     const cost = sendResult.status === 'sent' ? estimateCost(channel, 1) : 0;

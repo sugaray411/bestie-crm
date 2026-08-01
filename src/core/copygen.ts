@@ -163,7 +163,11 @@ export class CopyEngine {
 
     const response = await this.anthropic.messages.create({
       model: this.deps.model,
-      max_tokens: 1200,
+      // Generous headroom deliberately: on current models thinking is on by
+      // default and max_tokens caps thinking + response text together, so a
+      // budget sized to the copy alone truncates the copy. Marketing copy is
+      // short, so we are billed for what it actually writes, not for this cap.
+      max_tokens: 8000,
       system: BRAND_BRIEF,
       messages: [{ role: 'user', content: parts.join('\n\n') }],
     });

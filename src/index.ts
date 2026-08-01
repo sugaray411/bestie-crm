@@ -14,9 +14,11 @@ import { registerCampaignTools } from './tools/campaigns.js';
 import { registerSendTools } from './tools/send.js';
 import { registerReferralTools } from './tools/referral.js';
 import { registerAnalyticsTools } from './tools/analytics.js';
-import { registerIngestTools, ingestEvent, ContactRefSchema } from './tools/ingest.js';
+import { registerIngestTools, ingestEvent, ContactRefSchema, drainEventsInbox } from './tools/ingest.js';
 import { registerResources } from './resources/index.js';
 import { registerPrompts } from './prompts/index.js';
+import { unsubscribeRouter } from './http/unsubscribe.js';
+import { webhookRouter, type RawBodyRequest } from './http/webhooks.js';
 import { EVENT_TYPES, type EventType } from './types.js';
 
 /** stdio logging must go to stderr -- stdout is the JSON-RPC channel. */
@@ -67,7 +69,25 @@ function constantTimeEquals(a: string, b: string): boolean {
  */
 export function createHttpApp(ctx: ServerContext): express.Express {
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  app.use(
+    express.json({
+      limit: '1mb',
+      // Webhook signatures are computed over the exact bytes sent. Re-serializing
+      // the parsed JSON changes them, so keep the original buffer.
+      verify: (req, _res, buf) => {
+        (req as RawBodyRequest).rawBody = buf;
+      },
+    }),
+  );
+  // Twilio and RFC 8058 one-click both post form-encoded bodies.
+  app.use(express.urlencoded({ extended: false, limit: '1mb' }));
+
+  // Public routes, deliberately outside the bearer-token gate: an email
+  // recipient has no token, and providers cannot present one either. Each is
+  // authenticated by its own signature -- see http/unsubscribe.ts and
+  // core/webhookAuth.ts.
+  app.use(unsubscribeRouter(ctx));
+  app.use(webhookRouter(ctx));
 
   const requireBearer = (req: Request, res: Response, next: NextFunction): void => {
     const expected = ctx.config.bearerToken;
@@ -139,12 +159,36 @@ async function main(): Promise<void> {
   const pool = createPool(config);
   const ctx = createContext(pool, config);
 
+  let drainTimer: NodeJS.Timeout | undefined;
+
   const shutdown = async (): Promise<void> => {
+    if (drainTimer) clearInterval(drainTimer);
     await pool.end().catch(() => undefined);
     process.exit(0);
   };
   process.on('SIGINT', () => void shutdown());
   process.on('SIGTERM', () => void shutdown());
+
+  // Optional background drain of crm.events_inbox. Off by default: deployments
+  // that use POST /crm/ingest have nothing to drain, and running two drains
+  // against one database is wasteful even though `for update skip locked`
+  // makes it safe.
+  if (config.drainIntervalSeconds > 0) {
+    const intervalMs = Math.max(config.drainIntervalSeconds, 5) * 1000;
+    drainTimer = setInterval(() => {
+      void drainEventsInbox(ctx)
+        .then((result) => {
+          if (result.processed > 0 || result.failed > 0) {
+            log(`inbox drain: ${result.processed} processed, ${result.failed} failed`);
+          }
+        })
+        .catch((err: unknown) => {
+          log(`inbox drain failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+    }, intervalMs);
+    drainTimer.unref();
+    log(`draining crm.events_inbox every ${intervalMs / 1000}s`);
+  }
 
   if (config.transport === 'http' || config.transport === 'both') {
     if (!config.bearerToken) {

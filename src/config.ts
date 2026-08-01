@@ -21,6 +21,7 @@ const EnvSchema = z.object({
   COPY_MODEL: z.string().optional(),
 
   RESEND_API_KEY: z.string().optional(),
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
@@ -30,6 +31,8 @@ const EnvSchema = z.object({
   CRM_MCP_BEARER_TOKEN: z.string().optional(),
   CRM_HTTP_PORT: numberFromEnv(8787),
   CRM_TRANSPORT: z.enum(['stdio', 'http', 'both']).optional(),
+  CRM_PUBLIC_URL: z.string().optional(),
+  CRM_DRAIN_INTERVAL_SECONDS: numberFromEnv(0),
 
   BULK_APPROVAL_THRESHOLD: numberFromEnv(200),
   FREQUENCY_CAP: numberFromEnv(2),
@@ -41,6 +44,7 @@ const EnvSchema = z.object({
 
   SENDER_PHYSICAL_ADDRESS: z.string().optional(),
   UNSUBSCRIBE_BASE_URL: z.string().optional(),
+  UNSUBSCRIBE_MAILTO: z.string().optional(),
   CRM_ACTOR: z.string().optional(),
 });
 
@@ -50,12 +54,15 @@ export interface Config {
   anthropicApiKey: string | undefined;
   copyModel: string;
   resendApiKey: string | undefined;
+  resendWebhookSecret: string | undefined;
   emailFrom: string;
   twilioAccountSid: string | undefined;
   twilioAuthToken: string | undefined;
   twilioFromNumber: string | undefined;
   expoAccessToken: string | undefined;
   bearerToken: string | undefined;
+  publicUrl: string | undefined;
+  drainIntervalSeconds: number;
   httpPort: number;
   transport: 'stdio' | 'http' | 'both';
   guardrails: Guardrails;
@@ -73,6 +80,7 @@ export interface Guardrails {
   quietHoursEnd: number;
   senderPhysicalAddress: string;
   unsubscribeBaseUrl: string;
+  unsubscribeMailto: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -81,14 +89,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     databaseUrl: parsed.CRM_DATABASE_URL,
     dbPoolMax: parsed.CRM_DB_POOL_MAX,
     anthropicApiKey: parsed.ANTHROPIC_API_KEY,
-    copyModel: parsed.COPY_MODEL ?? 'claude-sonnet-4-5',
+    copyModel: parsed.COPY_MODEL ?? 'claude-opus-5',
     resendApiKey: parsed.RESEND_API_KEY,
+    resendWebhookSecret: parsed.RESEND_WEBHOOK_SECRET,
     emailFrom: parsed.EMAIL_FROM ?? 'Bestie <hello@bestie.app>',
     twilioAccountSid: parsed.TWILIO_ACCOUNT_SID,
     twilioAuthToken: parsed.TWILIO_AUTH_TOKEN,
     twilioFromNumber: parsed.TWILIO_FROM_NUMBER,
     expoAccessToken: parsed.EXPO_ACCESS_TOKEN,
     bearerToken: parsed.CRM_MCP_BEARER_TOKEN,
+    publicUrl: parsed.CRM_PUBLIC_URL,
+    drainIntervalSeconds: parsed.CRM_DRAIN_INTERVAL_SECONDS,
     httpPort: parsed.CRM_HTTP_PORT,
     transport: parsed.CRM_TRANSPORT ?? 'stdio',
     actor: parsed.CRM_ACTOR ?? 'mcp-agent',
@@ -102,6 +113,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       quietHoursEnd: parsed.QUIET_HOURS_END,
       senderPhysicalAddress: parsed.SENDER_PHYSICAL_ADDRESS ?? '',
       unsubscribeBaseUrl: parsed.UNSUBSCRIBE_BASE_URL ?? '',
+      unsubscribeMailto: parsed.UNSUBSCRIBE_MAILTO ?? '',
     },
   };
 }

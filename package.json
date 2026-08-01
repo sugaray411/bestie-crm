@@ -18,6 +18,7 @@
     "migrate": "node dist/db/migrate.js",
     "demo": "node scripts/demo.mjs",
     "verify": "node scripts/verify-send-paths.mjs",
+    "verify:webhooks": "node scripts/verify-webhooks.mjs",
     "test": "vitest run"
   },
   "dependencies": {

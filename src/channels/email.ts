@@ -15,6 +15,7 @@ export class ResendEmailAdapter implements ChannelAdapter {
   constructor(
     private readonly apiKey: string,
     private readonly from: string,
+    private readonly unsubscribeMailto: string,
   ) {}
 
   async send(message: OutboundMessage): Promise<SendResult> {
@@ -29,6 +30,10 @@ export class ResendEmailAdapter implements ChannelAdapter {
           to: [message.to],
           subject: message.subject ?? '(no subject)',
           text: message.body,
+          // RFC 8058 one-click unsubscribe. Gmail and Yahoo require this of bulk
+          // senders, and it is also the header that puts an "Unsubscribe" button
+          // in the client UI -- which measurably reduces spam complaints.
+          headers: this.unsubscribeHeaders(message.unsubscribeUrl),
         }),
       });
       if (!res.ok) {
@@ -40,9 +45,25 @@ export class ResendEmailAdapter implements ChannelAdapter {
       return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
     }
   }
+
+  private unsubscribeHeaders(unsubscribeUrl: string | undefined): Record<string, string> {
+    const targets: string[] = [];
+    if (unsubscribeUrl) targets.push(`<${unsubscribeUrl}>`);
+    if (this.unsubscribeMailto) targets.push(`<mailto:${this.unsubscribeMailto}>`);
+    if (targets.length === 0) return {};
+    return {
+      'List-Unsubscribe': targets.join(', '),
+      // Only claim one-click when there is a URL that can actually accept the POST.
+      ...(unsubscribeUrl ? { 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } : {}),
+    };
+  }
 }
 
 export function createEmailAdapter(config: Config): ChannelAdapter {
   if (!config.resendApiKey) return new UnconfiguredAdapter('email', 'resend', 'RESEND_API_KEY');
-  return new ResendEmailAdapter(config.resendApiKey, config.emailFrom);
+  return new ResendEmailAdapter(
+    config.resendApiKey,
+    config.emailFrom,
+    config.guardrails.unsubscribeMailto,
+  );
 }
