@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Cached market data and run outputs are reproducible; keep them out of git.
+data/*.csv
+artifacts/
+*.joblib
