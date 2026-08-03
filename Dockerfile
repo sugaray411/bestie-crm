@@ -26,6 +26,13 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
 
+# Supabase signs its server certs with a private root, so Node's trust store
+# rejects them and sslmode=verify-full fails with SELF_SIGNED_CERT_IN_CHAIN.
+# Baking the CA in lets CRM_DATABASE_URL use sslrootcert=/app/certs/prod-ca-2021.crt
+# and get real certificate verification rather than encryption alone. A public
+# CA certificate, not a secret -- nothing here is sensitive.
+COPY prod-ca-2021.crt /app/certs/prod-ca-2021.crt
+
 # Nothing in this process needs to write to disk or bind a privileged port.
 USER node
 
