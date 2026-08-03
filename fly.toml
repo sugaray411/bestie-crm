@@ -1,23 +1,48 @@
-# fly.toml app configuration file generated for bestie-crm on 2026-08-03T00:43:17Z
+# fly.toml app configuration file for bestie-crm
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
 
 app = 'bestie-crm'
 primary_region = 'dfw'
 
 [build]
 
+# The server defaults to the stdio transport, which opens no port at all. It has
+# to be told to serve HTTP, or the machine boots, listens on nothing, and every
+# health check fails. Use 'both' if you also want to attach over stdio.
+#
+# CRM_HTTP_PORT must match internal_port below.
+[env]
+  CRM_TRANSPORT = 'http'
+  CRM_HTTP_PORT = '8080'
+
 [http_service]
   internal_port = 8080
   force_https = true
+  # Scale to zero between requests. Fly wakes the machine on the next request,
+  # which is fine for unsubscribe clicks and provider webhooks -- both tolerate
+  # a cold start well inside their timeouts.
+  #
+  # Set min_machines_running = 1 if you enable CRM_DRAIN_INTERVAL_SECONDS: a
+  # stopped machine runs no timers, so the events_inbox drain would never fire.
   auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
   processes = ['app']
 
+  # /health needs no auth and touches no database, so it is a true liveness
+  # signal rather than a check that fails whenever Postgres hiccups.
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
+
 [[vm]]
-  memory = '1gb'
+  # The generated file set both `memory` and `memory_mb`, which contradict each
+  # other. 512mb is ample for this server; raise it if you enable the drain
+  # worker and push large batches through it.
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256

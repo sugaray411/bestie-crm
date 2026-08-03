@@ -5,3 +5,13 @@ dist/
 *.log
 coverage/
 .DS_Store
+
+# Not needed at runtime.
+#
+# Do NOT add src/, tsconfig.json, or scripts/ here: `npm run build` runs inside
+# the image and needs all three -- the build step calls
+# scripts/copy-migrations.mjs to place the .sql files into dist/.
+.git/
+.github/
+tests/
+*.md
