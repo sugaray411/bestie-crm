@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { Channel } from '../types.js';
 import { checkCopyTruthfulness, detectGuardrailOverride, type CopyViolation } from './compliance.js';
+import { PLATFORM_RULES, type SocialPlatform } from './socialContent.js';
 
 /**
  * The copy engine. Everything the model is told about AI Bestie lives here, and
@@ -141,6 +142,85 @@ export class CopyEngine {
     };
   }
 
+  /**
+   * Social copy. Same brand brief and the same truthfulness check as email --
+   * a claim the product cannot support is no more acceptable in a tweet -- but
+   * shaped to the platform and with no personalization placeholders, since a
+   * broadcast has no single recipient to personalize for.
+   */
+  async generateSocial(request: SocialCopyRequest): Promise<SocialCopyResult> {
+    const override = detectGuardrailOverride(`${request.goal} ${request.audience ?? ''} ${request.tone ?? ''}`);
+    if (override.attempted) {
+      throw new CopyGenerationError(
+        `Refused: the brief asks the copy engine to break a guardrail (${override.rules.join(', ')}). ` +
+          'Compliance rules are enforced in code and cannot be waived by a prompt.',
+      );
+    }
+
+    const rules = PLATFORM_RULES[request.platform];
+    const variantCount = Math.min(Math.max(request.variantCount ?? 1, 1), 3);
+
+    const build = (corrections: CopyViolation[]): string =>
+      [
+        `Goal: ${request.goal}`,
+        request.audience ? `Audience: ${request.audience}` : null,
+        request.tone ? `Tone: ${request.tone}` : null,
+        `Platform: ${rules.label}. Hard limit ${rules.maxLength} characters — stay comfortably under it.`,
+        rules.requiresMedia
+          ? `${rules.label} posts are visual: write the caption, and describe the accompanying image or video in one line prefixed "VISUAL:".`
+          : null,
+        `Use at most ${rules.softHashtagLimit} hashtags, and only if they genuinely help.`,
+        'No personalization placeholders — this is a broadcast, not a message to one person.',
+        variantCount > 1
+          ? `Produce ${variantCount} distinct variants separated by a line containing only "---".`
+          : 'Produce exactly one post. No preamble, no commentary, no options.',
+        corrections.length > 0
+          ? `Your previous attempt violated these rules and was rejected. Fix them:\n${corrections
+              .map((v) => `- ${v.rule}: you wrote "${v.match}". ${v.detail}`)
+              .join('\n')}`
+          : null,
+      ]
+        .filter((p): p is string => p !== null)
+        .join('\n\n');
+
+    const run = async (prompt: string): Promise<string[]> => {
+      const response = await this.anthropic.messages.create({
+        model: this.deps.model,
+        max_tokens: 8000,
+        system: BRAND_BRIEF,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = response.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n')
+        .trim();
+      const parts = text
+        .split(/^\s*---\s*$/m)
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0);
+      return parts.length > 0 ? parts : [text];
+    };
+
+    let variants = await run(build([]));
+    let check = checkCopyTruthfulness(variants.join('\n'));
+    let regenerated = false;
+
+    if (!check.ok) {
+      regenerated = true;
+      variants = await run(build(check.violations));
+      check = checkCopyTruthfulness(variants.join('\n'));
+      if (!check.ok) {
+        throw new CopyGenerationError(
+          'Generated social copy made claims AI Bestie cannot support, twice. Nothing was saved.',
+          check.violations,
+        );
+      }
+    }
+
+    return { body: variants[0] ?? '', variants, model: this.deps.model, regenerated };
+  }
+
   private async callModel(request: CopyRequest, corrections: CopyViolation[] = []): Promise<string> {
     const variantCount = Math.min(Math.max(request.variantCount ?? 1, 1), 3);
     const parts = [
@@ -178,6 +258,21 @@ export class CopyEngine {
       .join('\n')
       .trim();
   }
+}
+
+export interface SocialCopyRequest {
+  platform: SocialPlatform;
+  goal: string;
+  audience?: string;
+  tone?: string;
+  variantCount?: number;
+}
+
+export interface SocialCopyResult {
+  body: string;
+  variants: string[];
+  model: string;
+  regenerated: boolean;
 }
 
 interface ParsedCopy {

@@ -7,12 +7,15 @@ import { createSmsAdapter } from './channels/sms.js';
 import { createPushAdapter } from './channels/push.js';
 import { ChannelRateLimiter } from './core/rateLimiter.js';
 import { CopyEngine } from './core/copygen.js';
+import { createSocialAdapters, type SocialAdapter } from './channels/social.js';
+import type { SocialPlatform } from './core/socialContent.js';
 
 /** Everything the tools need, assembled once at boot. */
 export interface ServerContext {
   db: Db;
   config: Config;
   adapters: Record<Channel, ChannelAdapter>;
+  socialAdapters: Record<SocialPlatform, SocialAdapter>;
   rateLimiter: ChannelRateLimiter;
   copy: CopyEngine;
   /** Injectable so tests can pin time. */
@@ -29,6 +32,7 @@ export function createContext(db: Db, config: Config, now: () => Date = () => ne
       sms: createSmsAdapter(config),
       push: createPushAdapter(config),
     },
+    socialAdapters: createSocialAdapters(),
     rateLimiter: new ChannelRateLimiter(config.guardrails.sendRatePerMinute, now),
     copy: new CopyEngine({ apiKey: config.anthropicApiKey, model: config.copyModel }),
   };
