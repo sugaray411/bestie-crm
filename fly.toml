@@ -1,0 +1,41 @@
+# Rename `app` if the name is taken -- it must be globally unique on Fly.
+app = "bestie-crm"
+
+# Matches the machine already provisioned for this app. Keep it in the same
+# region as the Supabase project -- every tool call makes several round trips,
+# so a cross-continent hop shows up directly in latency. `fly platform regions`
+# lists the options.
+primary_region = "dfw"
+
+[build]
+
+[env]
+  # stdio for local Claude Desktop, HTTP for the public routes (SETUP.md line 77).
+  CRM_TRANSPORT = "both"
+  CRM_HTTP_PORT = "8787"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+
+  # Deliberately always-on, for two reasons:
+  #   1. src/index.ts:176 runs a setInterval drain loop. A stopped machine is a
+  #      stopped drain -- queued sends silently stall until something wakes it.
+  #   2. Resend and Twilio POST webhooks unprompted. Cold-start latency on a
+  #      signed webhook risks timeouts, and Twilio signature checks are
+  #      unforgiving about retries.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
