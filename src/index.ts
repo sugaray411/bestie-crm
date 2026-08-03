@@ -14,6 +14,7 @@ import { registerCampaignTools } from './tools/campaigns.js';
 import { registerSendTools } from './tools/send.js';
 import { registerReferralTools } from './tools/referral.js';
 import { registerAnalyticsTools } from './tools/analytics.js';
+import { registerSocialTools } from './tools/social.js';
 import { registerIngestTools, ingestEvent, ContactRefSchema, drainEventsInbox } from './tools/ingest.js';
 import { registerResources } from './resources/index.js';
 import { registerPrompts } from './prompts/index.js';
@@ -48,6 +49,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   registerSendTools(server, ctx);
   registerReferralTools(server, ctx);
   registerAnalyticsTools(server, ctx);
+  registerSocialTools(server, ctx);
   registerIngestTools(server, ctx);
   registerResources(server, ctx);
   registerPrompts(server, ctx);

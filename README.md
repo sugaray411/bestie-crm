@@ -218,6 +218,10 @@ Bestie Pro is $9.99/month. The referral program pays the referrer one month of P
 
 **Analytics** — `crm_funnel_metrics`, `crm_campaign_metrics`, `crm_ltv_cac`, `crm_top_channels`, `crm_feature_engagement`
 
+**Social content** — `crm_generate_social_post`, `crm_create_social_post`, `crm_schedule_social_post`, `crm_approve_social_post`, `crm_cancel_social_post`, `crm_list_social_posts`, `crm_publish_due_posts`, `crm_add_social_account`, `crm_list_social_accounts`, `crm_social_platform_rules`
+
+> Drafting, validation, scheduling and approval work. **Publishing to platforms does not** — no adapter is implemented, because every platform gates write access behind an app review that takes weeks. See [SOCIAL.md](SOCIAL.md).
+
 **Ingest and ops** — `crm_ingest_event`, `crm_drain_events_inbox`, `crm_check_isolation`
 
 **Resources** — `crm://overview`, `crm://compliance/policy`, `crm://campaigns/{id}`, `crm://segments/{id}`
@@ -321,15 +325,20 @@ src/
   config.ts             the only module that reads process.env
   context.ts            wiring: pool, adapters, rate limiter, copy engine
   db/                   pool.ts, migrate.ts, repo.ts, isolation.ts
-  migrations/           0001_crm_schema.sql, 0002_views_grants.sql
+  migrations/           0001_crm_schema.sql, 0002_views_grants.sql,
+                        0003_social_content.sql
   core/                 consentGate, compliance, segmentAst, rateLimiter,
-                        sendPipeline, render, copygen, funnel, audit
-  channels/             email (Resend), sms (Twilio), push (Expo) behind one adapter interface
+                        sendPipeline, render, copygen, funnel, audit,
+                        socialContent, webhookAuth
+  channels/             email (Resend), sms (Twilio), push (Expo) behind one adapter
+                        interface; social adapters are declared but unimplemented
   tools/                contacts, consent, segments, templates, campaigns,
-                        send, referral, analytics, ingest
+                        send, referral, analytics, social, ingest
+  http/                 unsubscribe, webhooks (public, signature-authenticated)
   resources/  prompts/
-tests/                  153 tests, all pure logic -- no network, no database
-scripts/                demo.mjs, verify-send-paths.mjs, copy-migrations.mjs
+tests/                  198 tests, all pure logic -- no network, no database
+scripts/                demo.mjs, verify-send-paths.mjs, verify-webhooks.mjs,
+                        copy-migrations.mjs
 ```
 
 The compliance logic in `core/` is deliberately pure and clock-injected: the gate takes facts and returns a decision, so every rule above is tested exhaustively without a database or a network.

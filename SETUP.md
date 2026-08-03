@@ -71,12 +71,40 @@ than writing it by hand.
 ## 3. Deploy the CRM with a public HTTPS URL
 
 The unsubscribe link and both webhooks must be publicly reachable, so this has
-to be hosted before any real send. The app already runs on Fly.io, so a second
-Fly app alongside it is the natural fit.
+to be hosted before any real send. `Dockerfile` and `fly.toml` are committed and
+configured — `fly.toml` sets `CRM_TRANSPORT=both` (stdio for a local Claude
+Desktop, HTTP for the public routes) and `CRM_HTTP_PORT=8787` to match
+`internal_port`, and health-checks `/health`. It also pins
+`min_machines_running = 1`, because `CRM_DRAIN_INTERVAL_SECONDS` runs on a timer
+and a stopped machine runs no timers.
 
-Set `CRM_TRANSPORT=both` — stdio for your local Claude Desktop, HTTP for the
-public routes — and point `CRM_PUBLIC_URL` at whatever hostname you land on.
+Everything else is a secret and must be set out of band. **The app will not boot
+without `CRM_MCP_BEARER_TOKEN`** — that is deliberate, since serving MCP over
+HTTP without it would be an open door.
 
+```bash
+fly secrets set \
+  CRM_DATABASE_URL='postgres://crm_service...@...pooler.supabase.com:6543/postgres?sslmode=require' \
+  CRM_MCP_BEARER_TOKEN="$(openssl rand -hex 32)" \
+  CRM_PUBLIC_URL='https://crm.aibestie.site' \
+  SENDER_PHYSICAL_ADDRESS='Bestie Labs, 123 Example St, San Francisco, CA 94110' \
+  UNSUBSCRIBE_BASE_URL='https://crm.aibestie.site/u' \
+  ANTHROPIC_API_KEY='sk-ant-...' \
+  RESEND_API_KEY='re_...' \
+  RESEND_WEBHOOK_SECRET='whsec_...'
+
+fly deploy
+curl https://crm.aibestie.site/health   # expect {"status":"ok","server":"bestie-growth-crm"}
+```
+
+Save `CRM_MCP_BEARER_TOKEN` somewhere durable: it is also the HMAC key for
+unsubscribe links and bulk-approval tokens, so rotating it invalidates every
+unsubscribe link already sitting in someone's inbox.
+
+`CRM_PUBLIC_URL` must match the hostname exactly — Twilio signs over the full
+request URL, so a mismatch makes every inbound webhook fail with a 401.
+
+- [ ] Secrets set
 - [ ] Deployed, `GET /health` returns `{"status":"ok"}`
 
 ---
