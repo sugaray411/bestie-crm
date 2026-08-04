@@ -80,6 +80,19 @@ begin
         from public.referrals
         group by referrer_code
     $v$;
+  -- The real table names the column `code`, not `referrer_code`: it is the
+  -- referrer's own code, written onto each redemption row by
+  -- backend/services/referralService.ts. Same meaning, different name, so map it
+  -- rather than asking the app team to migrate a live table.
+  elsif pg_temp.crm_has_cols('public.referrals', array['code','rewarded_at']) then
+    execute $v$
+      create or replace view public.crm_v_referrals as
+        select code as referrer_code,
+               count(*) filter (where rewarded_at is not null) as converted,
+               count(*)                                        as total
+        from public.referrals
+        group by code
+    $v$;
   else
     raise notice 'public.referrals missing or lacking the contract columns - skipping crm_v_referrals. The app team creates this view (§4b).';
   end if;
